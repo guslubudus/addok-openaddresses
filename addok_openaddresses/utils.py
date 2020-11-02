@@ -1,23 +1,47 @@
 import csv
+import os
+import json
 from progressist import ProgressBar
+import sys
+
 
 from addok.config import config
+DEBUGIN=(os.environ.get('DEBUGINPUT')=='1')
+DEBUGOUT=(os.environ.get('DEBUGOUTPUT')=='1')
+def id_generator(row):
+    if row['type'] == "number": row['ID']='N'
+    else: row['ID']='S'
+    
+    return row['ID']
 
 
 def group_addresses(rows):
     ADDRESSES = {}
     bar = ProgressBar(throttle=10000, template='Grouping addresses… {done}')
-    for row in csv.DictReader(rows):
+    for row in rows:
+        ADDR={}
+        if DEBUGIN:
+            print('\rDEBUG:ROW=', row)
+
         if not row.get('STREET'):
-            print('\rFiltering out street without name', row)
+            if DEBUGIN: print("\rFiltering out street without name", row, file=sys.stderr)
             continue
         if row['STREET'] not in ADDRESSES:
-            row['housenumbers'] = {}
-            row['id'] = 'street-{}'.format(row['ID'])
-            row['lat'] = row['LAT']
-            row['lon'] = row['LON']
-            row.update(config.OPENADDRESSES_EXTRA)
-            ADDRESSES[row['STREET']] = row
+            if row.get('housenumbers')==None:
+                ADDR['type'] = "number"
+            else:
+                ADDR['type'] = "street"
+
+            if not row['ID']: row['ID']=id_generator(row)
+
+            ADDR['importance'] = 0.5
+            ADDR['housenumbers'] = {}
+            ADDR['id'] = 'street-{}'.format(row['ID'])
+            ADDR['lat'] = row['LAT']
+            ADDR['lon'] = row['LON']
+            if config.OPENADDRESSES_EXTRA: ADDR.update(config.OPENADDRESSES_EXTRA)
+            else: ADDR['city']= row['CITY']
+            ADDRESSES[row['STREET']] = ADDR
         ADDRESSES[row['STREET']]['housenumbers'][row['NUMBER']] = {
             'lat': row['LAT'],
             'lon': row['LON'],
@@ -26,7 +50,8 @@ def group_addresses(rows):
         bar.update()
 
     for address in ADDRESSES.values():
-        yield address
+        if DEBUGOUT: print('\rDEBUG:JSON=', json.dumps(address))
+        yield json.dumps(address)
 
 
 def make_labels(helper, result):
